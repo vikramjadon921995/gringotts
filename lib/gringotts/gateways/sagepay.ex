@@ -174,7 +174,7 @@ defmodule Gringotts.Gateways.SagePay do
   ## Example
 
   The following example shows how one would capture a previously authorized amount worth 100£ by
-  referencing the obtained transaction ID (payment_id) from `authorize/3` function.
+  referencing the obtained transaction ID (`payment_id`) from `authorize/3` function.
 
       iex> amount = Money.new(100, :GBP)
       iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
