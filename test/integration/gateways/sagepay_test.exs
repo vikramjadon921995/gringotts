@@ -93,4 +93,19 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
       end
     end
   end
+
+  describe "capture" do
+    test "unsuccessful response of capture with incorrect params", %{opts: opts} do
+      use_cassette "sagepay/successful response of capture with correct params" do
+        assert {:error, response} = SagePay.capture(@payment_id, @amount, opts)
+      end
+    end
+
+    test "successful response of capture with valid params", %{opts: opts} do
+      use_cassette "sagepay/successful response of capture with valid params" do
+        {:ok, response} = SagePay.authorize(@amount, @card, opts)
+        assert {:ok, response} = SagePay.capture(response.id, @amount, opts)
+      end
+    end
+  end
 end

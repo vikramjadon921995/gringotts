@@ -161,6 +161,46 @@ defmodule Gringotts.Gateways.SagePay do
     commit(:post, "transactions", transaction_params, transaction_header)
   end
 
+  @doc """
+
+  `amount` is transferred to the merchants's account by using transaction Id (`payement_id`)
+   generated in `authorize/3` function by SagePay.
+
+  ## Note
+
+  * Deferred transactions are not sent to the bank for completion until you capture them using the capture instruction.
+  * You can release only once and only for an amount up to and including the amount of the original Deferred transaction.
+
+  ## Example
+
+  The following example shows how one would capture a previously authorized amount worth 100£ by
+  referencing the obtained transaction ID (payment_id) from `authorize/3` function.
+
+      iex> amount = Money.new(100, :GBP)
+      iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
+      iex> {:ok, capture_result} = Gringotts.capture(Gringotts.Gateways.SagePay, auth_result.id, amount, opts)
+
+  """
+  @spec capture(String.t(), Money.t(), keyword) :: {:ok | :error, Response.t()}
+  def capture(payment_id, amount, opts) do
+    {currency, value} = Money.to_string(amount)
+
+    capture_header = [
+      {"Authorization", "Basic " <> opts[:config].auth_id},
+      {"Content-type", "application/json"}
+    ]
+
+    capture_body =
+      Poison.encode!(%{
+        "instructionType" => "release",
+        "amount" => Kernel.trunc(String.to_float(value))
+      })
+
+    endpoint = "transactions/" <> payment_id <> "/instructions"
+
+    commit(:post, endpoint, capture_body, capture_header)
+  end
+
   ###############################################################################
   #                                PRIVATE METHODS                              #
   ###############################################################################
