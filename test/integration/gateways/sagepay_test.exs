@@ -93,4 +93,19 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
       end
     end
   end
+
+  describe "void" do
+    test "successful response of void with right params", %{opts: opts} do
+      use_cassette "sagepay/successful response of void with right params" do
+        {:ok, response} = SagePay.authorize(@amount, @card, opts)
+        assert {:ok, _} = SagePay.void(response.id, opts)
+      end
+    end
+
+    test "unsuccessful response of void with invalid params", %{opts: opts} do
+      use_cassette "sagepay/unsuccessful response of void with invalid params" do
+        assert {:error, _} = SagePay.void(@payment_id, opts)
+      end
+    end
+  end
 end

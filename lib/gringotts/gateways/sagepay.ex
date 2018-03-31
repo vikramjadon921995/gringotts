@@ -161,6 +161,47 @@ defmodule Gringotts.Gateways.SagePay do
     commit(:post, "transactions", transaction_params, transaction_header)
   end
 
+  @doc """
+  Voids the referenced payment.
+
+  This method attempts a reversal of a previous transaction referenced by
+  transaction ID (`payment_id`).
+
+  Voiding a transaction will prevent the funds from being transferred from your 
+  shoppers account into your own, or in the case of a refund, from your account 
+  into your shoppers.
+
+  * As a consequence, the customer will never see any booking on his statement.
+
+  ## Note
+
+  * For payments and refunds you can only void a transaction on the day it has been processed. 
+  * The deferred transaction when captured is sent to the bank for authorisation and will then 
+    allow you to take the funds within the 30 days.
+  * If you provide the `transaction_type` Deferred in `void/2` then the `instruction_type` must be
+    abort, otherwise void.
+
+  ## Example
+
+      iex> amount = Money.new(100, :GBP)
+      iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
+      iex> Gringotts.void(Gringotts.Gateways.SagePay, auth_result.id, opts)
+
+  """
+  @spec void(String.t(), keyword) :: {:ok | :error, Response.t()}
+  def void(payment_id, opts) do
+    void_header = [
+      {"Authorization", "Basic " <> opts[:config].auth_id},
+      {"Content-type", "application/json"}
+    ]
+
+    void_body = void_details(opts[:transaction_type])
+
+    endpoint = "transactions/" <> payment_id <> "/instructions"
+
+    commit(:post, endpoint, void_body, void_header)
+  end
+
   ###############################################################################
   #                                PRIVATE METHODS                              #
   ###############################################################################
@@ -271,6 +312,22 @@ defmodule Gringotts.Gateways.SagePay do
         "postalCode" => opts[:billing_address].postal_code,
         "country" => opts[:billing_address].country
       }
+    })
+  end
+
+  # If the `transaction_type` is of Deferred type then `instruction_type` should be abort.
+
+  defp void_details("Deferred") do
+    Poison.encode!(%{
+      "instructionType" => "abort"
+    })
+  end
+
+  # If the `transaction_type` is other then Deferred then 'instruction_type' should be void.
+
+  defp void_details("Payment") do
+    Poison.encode!(%{
+      "instructionType" => "void"
     })
   end
 
