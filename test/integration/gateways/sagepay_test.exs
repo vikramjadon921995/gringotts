@@ -80,7 +80,7 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
       random_number1
       |> Integer.to_string()
 
-    opts_authoriize = [vendor_tx_code: "demoo-" <> random_code1] ++ @opts
+    opts_authorize = [vendor_tx_code: "demoo-" <> random_code1] ++ @opts
 
     random_number2 = Enum.random(1_000_000..10_000_000000000000)
 
@@ -90,21 +90,21 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
 
     opts_refund = [vendor_tx_code: "demoo-" <> random_code2] ++ @opts2
 
-    {:ok, opts: [opts_authoriize: opts_authoriize, opts_refund: opts_refund]}
+    {:ok, opts: [opts_authorize: opts_authorize, opts_refund: opts_refund]}
   end
 
   describe "authorize" do
     test "successful response with valid params", %{opts: opts} do
       use_cassette "sagepay/successful response with valid params" do
-        opts_authoriize = opts[:opts_authoriize] ++ [transaction_type: "Deferred"]
-        assert {:ok, _} = SagePay.authorize(@amount, @card, opts_authoriize)
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Deferred"]
+        assert {:ok, _} = SagePay.authorize(@amount, @card, opts_authorize)
       end
     end
 
     test "successful response message from authorize function", %{opts: opts} do
       use_cassette "sagepay/successful response message from authorize function" do
-        opts_authoriize = opts[:opts_authoriize] ++ [transaction_type: "Payment"]
-        {:ok, response} = SagePay.authorize(@amount, @card, opts_authoriize)
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Payment"]
+        {:ok, response} = SagePay.authorize(@amount, @card, opts_authorize)
 
         assert response.message == "The Authorisation was Successful."
       end
@@ -120,10 +120,19 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
 
     test "merchant_session_key", %{opts: opts} do
       use_cassette "sagepay/merchant_session_key" do
-        opts_authoriize = opts[:opts_authoriize] ++ [transaction_type: "Payment"]
-        {:ok, response} = SagePay.authorize(@amount, @card, opts_authoriize)
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Payment"]
+        {:ok, response} = SagePay.authorize(@amount, @card, opts_authorize)
 
         assert is_binary(response.id)
+      end
+    end
+  end
+
+  describe "purchase" do
+    test "successful response of purchase with correct params", %{opts: opts} do
+      use_cassette "sagepay/successful response of purchase with correct params" do
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Deferred"]
+        assert {:ok, response} = SagePay.purchase(@amount, @card, opts_authorize)
       end
     end
   end

@@ -166,6 +166,71 @@ defmodule Gringotts.Gateways.SagePay do
     commit(:post, "transactions", transaction_params, transaction_header)
   end
 
+  @doc """
+
+  `amount` is transferred to the merchants's account by using transaction Id (`payement_id`)
+   generated in `authorize/3` function by SagePay.
+
+  ## Note
+
+  * Deferred transactions are not sent to the bank for completion until you capture them using the capture instruction.
+  * You can release only once and only for an amount up to and including the amount of the original Deferred transaction.
+
+  ## Example
+
+  The following example shows how one would capture a previously authorized amount worth 100£ by
+  referencing the obtained transaction ID (payment_id) from `authorize/3` function.
+
+      iex> amount = Money.new(100, :GBP)
+      iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
+      iex> {:ok, capture_result} = Gringotts.capture(Gringotts.Gateways.SagePay, auth_result.id, amount, opts)
+
+  """
+  @spec capture(String.t(), Money.t(), keyword) :: {:ok | :error, Response.t()}
+  def capture(payment_id, amount, opts) do
+    {currency, value} = Money.to_string(amount)
+
+    capture_header = [
+      {"Authorization", "Basic " <> opts[:config].auth_id},
+      {"Content-type", "application/json"}
+    ]
+
+    capture_body =
+      Poison.encode!(%{
+        "instructionType" => opts[:transaction_type],
+        "amount" => Kernel.trunc(String.to_float(value))
+      })
+
+    endpoint = "transactions/" <> payment_id <> "/instructions"
+
+    commit(:post, endpoint, capture_body, capture_header)
+  end
+
+  @doc """
+  Transfers `amount` from the customer to the merchant.
+
+  SagePay attempts to process a purchase on behalf of the customer, by
+  debiting `amount` from the customer's account by charging the customer's
+  `card`.
+
+  ## Note
+
+  * In SagePay we have to explicitly call the `authorize/3` function and the
+    `capture/3` function in purchase to complete the transaction. 
+
+  ## Example
+
+      iex> amount = Money.new(100, :GBP)
+      iex> Gringotts.purchase(Gringotts.Gateways.SagePay, amount, card, opts)
+
+  """
+  @spec purchase(Money.t(), CreditCard.t(), keyword) :: {:ok | :error, Response.t()}
+  def purchase(amount, card, opts) do
+    {:ok, response} = authorize(amount, card, opts)
+    opts = List.keyreplace(opts, :transaction_type, 0, {:transaction_type, "release"})
+    capture(response.id, amount, opts)
+  end
+
   ###############################################################################
   #                                PRIVATE METHODS                              #
   ###############################################################################
@@ -248,10 +313,10 @@ defmodule Gringotts.Gateways.SagePay do
   end
 
   # Function `transaction_details` creates the actual body (details of the customer )of the card
-  # and with `merchant_session_key`, `card_identifiier` ,shipping address of a customer, and
+  # and with `merchant_session_key`, `card_identifier` ,shipping address of a customer, and
   # other details and converting the map into keyword list.
 
-  defp transaction_details(amount, merchant_key, card_identifiier, opts) do
+  defp transaction_details(amount, merchant_key, card_identifier, opts) do
     {currency, value} = Money.to_string(amount)
     full_address = opts[:billing_address].street1 <> " " <> opts[:billing_address].street2
 
@@ -260,7 +325,7 @@ defmodule Gringotts.Gateways.SagePay do
       "paymentMethod" => %{
         "card" => %{
           "merchantSessionKey" => merchant_key,
-          "cardIdentifier" => card_identifiier,
+          "cardIdentifier" => card_identifier,
           "save" => true
         }
       },
