@@ -33,8 +33,8 @@ defmodule Gringotts.Gateways.SagePay do
   |  `vendor`              |  Name of the merchant.                                                      |
   |  `vendor_tx_code`      |  vendor_tx_code is a unique code for every transaction in SagePay.          |
   |  `transaction_type`    |  SagePay allows four transactions type:- Deferred, Payment, Repeat, Refund. |
-  |  `customer_first_name` |  First name of a customer.                                                  |
-  |  `customer_last_name`  |  Last name of a customer.                                                   |
+  |  `first_name`          |  First name of a customer.                                                  |
+  |  `last_name`           |  Last name of a customer.                                                   |
   |  `address`             |  Billing address of a customer.                                             |
 
   ## Registering your SagePay account at `Gringotts`
@@ -65,8 +65,8 @@ defmodule Gringotts.Gateways.SagePay do
 
   ## Supported currencies and countries
 
-      :AUD, :CAD, :CHF, :CYP, :DKK, :EUR, :GBP, :HKD, :INR, :JPY, 
-      :MTL, :NOK, :NZD, :RUB, :SEK, :SGD, :THB, :TRY, :USD, :ZAR 
+      AUD, CAD, CHF, CYP, DKK, EUR, GBP, HKD, INR, JPY, 
+      MTL, NOK, NZD, RUB, SEK, SGD, THB, TRY, USD, ZAR 
 
   ## Following the examples
 
@@ -127,7 +127,7 @@ defmodule Gringotts.Gateways.SagePay do
   a sample `card`.
 
       iex> amount = Money.new(42, :GBP)
-      iex> address = %Address{ street1: "407 St.", street2: "John Street", city: "London", postalCode: "EC1V 4AB", country: "GB"} 
+      iex> address = %Address{ street1: "407 St.", street2: "John Street", city: "London", postal_code: "EC1V 4AB", country: "GB"} 
       iex> card = %Gringotts.CreditCard{number: "4929000005559",month: 3,year: 20,first_name: "SAM",last_name: "JONES",verification_code: "123",brand: "VISA"}
       iex> opts = [
                   config: %{
@@ -139,7 +139,12 @@ defmodule Gringotts.Gateways.SagePay do
                   description: "Demo Payment",
                   customer_first_name: "Sam",
                   customer_last_name: "Jones",
-                  billing_address: address
+                  billing_address: %{
+                                      "address1": "407 St. John Street",
+                                      "city": "London",
+                                      "postalCode": "EC1V 4AB",
+                                      "country": "GB"
+                                    }
             ]
       iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
       iex> auth_result.id
@@ -149,9 +154,9 @@ defmodule Gringotts.Gateways.SagePay do
     merchant_key = generate_merchant_key(opts)
 
     card = card_params(card)
-    card_identifiier = generate_card_identifier(card, merchant_key)
+    card_identifier = generate_card_identifier(card, merchant_key)
 
-    transaction_params = transaction_details(amount, merchant_key, card_identifiier, opts)
+    transaction_params = transaction_details(amount, merchant_key, card_identifier, opts)
 
     transaction_header = [
       {"Authorization", "Basic " <> opts[:config].auth_id},
@@ -159,6 +164,89 @@ defmodule Gringotts.Gateways.SagePay do
     ]
 
     commit(:post, "transactions", transaction_params, transaction_header)
+  end
+
+  @doc """
+
+  `amount` is transferred to the merchants's account by using transaction Id (`payement_id`)
+   generated in `authorize/3` function by SagePay.
+
+  ## Note
+
+  * Deferred transactions are not sent to the bank for completion until you capture them using the capture instruction.
+  * You can release only once and only for an amount up to and including the amount of the original Deferred transaction.
+
+  ## Example
+
+  The following example shows how one would capture a previously authorized amount worth 100£ by
+  referencing the obtained transaction ID (payment_id) from `authorize/3` function.
+
+      iex> amount = Money.new(100, :GBP)
+      iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
+      iex> {:ok, capture_result} = Gringotts.capture(Gringotts.Gateways.SagePay, auth_result.id, amount, opts)
+
+  """
+  @spec capture(String.t(), Money.t(), keyword) :: {:ok | :error, Response.t()}
+  def capture(payment_id, amount, opts) do
+    {currency, value} = Money.to_string(amount)
+
+    capture_header = [
+      {"Authorization", "Basic " <> opts[:config].auth_id},
+      {"Content-type", "application/json"}
+    ]
+
+    capture_body =
+      Poison.encode!(%{
+        "instructionType" => opts[:transaction_type],
+        "amount" => Kernel.trunc(String.to_float(value))
+      })
+
+    endpoint = "transactions/" <> payment_id <> "/instructions"
+
+    commit(:post, endpoint, capture_body, capture_header)
+  end
+
+  @doc """
+  Refunds the `amount` to the customer's account with reference to a prior transfer.
+
+  SagePay processes a full or partial refund worth `amount`, referencing a
+  previous `purchase/3` or `capture/3`.
+
+  ## Note
+
+  * In refund user can't wish for refund greater than the `capture/3` `amount`
+  * Once you have requested a refund, we advise giving the business up to 5 working
+    days to complete this for you.
+  * In refund the `vendor_tx_code` should be unique.
+
+
+  ## Example
+
+      iex> amount = Money.new(100, :GBP)
+      iex> {:ok, auth_result} = Gringotts.authorize(Gringotts.Gateways.SagePay, amount, card, opts)
+      iex> Gringotts.capture(Gringotts.Gateways.SagePay, amount, auth_result.id, opts)
+      iex> Gringotts.refund(Gringotts.Gateways.SagePay, amount, auth_result.id, opts)
+   
+  """
+  @spec refund(Money.t(), String.t(), keyword) :: {:ok | :error, Response.t()}
+  def refund(amount, payment_id, opts) do
+    {currency, value} = Money.to_string(amount)
+
+    refund_header = [
+      {"Authorization", "Basic " <> opts[:config].auth_id},
+      {"Content-type", "application/json"}
+    ]
+
+    refund_body =
+      Poison.encode!(%{
+        "transactionType" => opts[:transaction_type],
+        "referenceTransactionId" => payment_id,
+        "vendorTxCode" => opts[:vendor_tx_code],
+        "amount" => Kernel.trunc(String.to_float(value)),
+        "description" => opts[:description]
+      })
+
+    commit(:post, "transactions", refund_body, refund_header)
   end
 
   ###############################################################################
@@ -256,7 +344,7 @@ defmodule Gringotts.Gateways.SagePay do
         "card" => %{
           "merchantSessionKey" => merchant_key,
           "cardIdentifier" => card_identifiier,
-          "save" => false
+          "save" => true
         }
       },
       "vendorTxCode" => opts[:vendor_tx_code],

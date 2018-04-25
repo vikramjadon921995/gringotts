@@ -33,11 +33,29 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
         "aEpZeHN3N0hMYmo0MGNCOHVkRVM4Q0RSRkxodUo4RzU0TzZyRHBVWHZFNmhZRHJyaWE6bzJpSFNyRnliWU1acG1XT1FNdWhzWFA1MlY0ZkJ0cHVTRHNocktEU1dzQlkxT2lONmh3ZDlLYjEyejRqNVVzNXU=",
       merchant_name: "sandbox"
     },
-    transaction_type: "Deferred",
     description: "Demo Payment",
     customer_first_name: "Sam",
     customer_last_name: "Jones",
     billing_address: @address
+  ]
+
+  @opts1 [
+    config: %{
+      auth_id:
+        "aEpZeHN3N0hMYmo0MGNCOHVkRVM4Q0RSRkxodUo4RzU0TzZyRHBVWHZFNmhZRHJyaWE6bzJpSFNyRnliWU1acG1XT1FNdWhzWFA1MlY0ZkJ0cHVTRHNocktEU1dzQlkxT2lONmh3ZDlLYjEyejRqNVVzNXU=",
+      merchant_name: "sandbox"
+    },
+    transaction_type: "release"
+  ]
+
+  @opts2 [
+    config: %{
+      auth_id:
+        "aEpZeHN3N0hMYmo0MGNCOHVkRVM4Q0RSRkxodUo4RzU0TzZyRHBVWHZFNmhZRHJyaWE6bzJpSFNyRnliWU1acG1XT1FNdWhzWFA1MlY0ZkJ0cHVTRHNocktEU1dzQlkxT2lONmh3ZDlLYjEyejRqNVVzNXU=",
+      merchant_name: "sandbox"
+    },
+    transaction_type: "Refund",
+    description: "Demo Payment"
   ]
 
   @bad_opts [
@@ -56,25 +74,38 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
   @payment_id "T6569400-1516-0A3F-E3FA-7F222CC79221"
 
   setup do
-    random_number = Enum.random(1_000_000..10_000_000000000000)
+    random_number1 = Enum.random(1_000_000..10_000_000000000000)
 
-    random_code =
-      random_number
+    random_code1 =
+      random_number1
       |> Integer.to_string()
 
-    {:ok, opts: [vendor_tx_code: "demotransaction-" <> random_code] ++ @opts}
+    opts_authorize = [vendor_tx_code: "demoo-" <> random_code1] ++ @opts
+
+    random_number2 = Enum.random(1_000_000..10_000_000000000000)
+
+    random_code2 =
+      random_number2
+      |> Integer.to_string()
+
+    opts_refund = [vendor_tx_code: "demoo-" <> random_code2] ++ @opts2
+
+    {:ok, opts: [opts_authorize: opts_authorize, opts_refund: opts_refund]}
   end
 
   describe "authorize" do
     test "successful response with valid params", %{opts: opts} do
       use_cassette "sagepay/successful response with valid params" do
-        assert {:ok, _} = SagePay.authorize(@amount, @card, opts)
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Deferred"]
+        assert {:ok, _} = SagePay.authorize(@amount, @card, opts_authorize)
       end
     end
 
     test "successful response message from authorize function", %{opts: opts} do
       use_cassette "sagepay/successful response message from authorize function" do
-        {:ok, response} = SagePay.authorize(@amount, @card, opts)
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Payment"]
+        {:ok, response} = SagePay.authorize(@amount, @card, opts_authorize)
+
         assert response.message == "The Authorisation was Successful."
       end
     end
@@ -82,14 +113,36 @@ defmodule Gringotts.Integration.Gateways.SagePayTest do
     test "unsuccessful response with invalid params" do
       use_cassette "sagepay/unsuccessful response with invalid params" do
         {:error, response} = SagePay.authorize(@amount, @card, @bad_opts)
+
         refute response.message == "The Authorisation was Successful."
       end
     end
 
     test "merchant_session_key", %{opts: opts} do
       use_cassette "sagepay/merchant_session_key" do
-        {:ok, response} = SagePay.authorize(@amount, @card, opts)
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Payment"]
+        {:ok, response} = SagePay.authorize(@amount, @card, opts_authorize)
+
         assert is_binary(response.id)
+      end
+    end
+  end
+
+  describe "refund" do
+    test "successful response of refund with right params", %{opts: opts} do
+      use_cassette "sagepay/successful response of refund with right params" do
+        opts_authorize = opts[:opts_authorize] ++ [transaction_type: "Deferred"]
+        {:ok, response} = SagePay.authorize(@amount, @card, opts_authorize)
+        SagePay.capture(response.id, @amount, @opts1)
+        opts_refund = opts[:opts_refund] ++ [transaction_type: "Refund"]
+        assert {:ok, _} = SagePay.refund(@amount, response.id, opts_refund)
+      end
+    end
+
+    test "unsuccessful response of with invalid params", %{opts: opts} do
+      use_cassette "sagepay/unsuccessful response of with invalid params" do
+        opts_refund = opts[:opts_refund] ++ [transaction_type: "Refund"]
+        assert {:error, _} = SagePay.refund(@amount, @payment_id, opts_refund)
       end
     end
   end
